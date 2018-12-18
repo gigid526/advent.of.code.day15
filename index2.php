@@ -22,6 +22,10 @@ function dfs($point, $path, $destination, &$paths, &$visited, &$shortestPathLeng
         return;
     }
     $visited[$point[0]][$point[1]] = 1;
+    $transitions = [];
+    if ($destination[0] - $point[0] > 0 && $destination[1] - $point[1] > 0) {
+        $transitions = [];
+    }
     foreach ([[-1, 0], [0, -1], [0, 1], [1, 0]] as $transition) {
         $y = $point[0] + $transition[0];
         $x = $point[1] + $transition[1];
