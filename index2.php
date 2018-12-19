@@ -1,183 +1,184 @@
 <?php
+$flags = FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES;
+$input = array_map(function ($line) { return str_split($line); }, file(__DIR__ . '/inputs/inputPuzzle.txt', $flags));
+$units = [];
+$points = [];
+$totalElves = 0;
+for ($y = 0; $y < count($input); ++$y) {
+    for ($x = 0; $x < count($input[$y]); ++$x) {
+        if (in_array($input[$y][$x], ['G', 'E', '.'])) {
+            $i = count($input[0]) * $y + $x;
+            $points[$i] = [$y, $x, []];
+            foreach ([[-1, 0], [0, -1], [0, 1], [1, 0]] as $transition) {
+                $ty = $y + $transition[0];
+                $tx = $x + $transition[1];
+                if ($ty >= 0 && $ty < count($input) && $tx >= 0 && $tx < count($input[$ty]) && in_array($input[$ty][$tx], ['G', 'E', '.'])) {
+                    array_push($points[$i][2], count($input[0]) * $ty + $tx);
+                }
+            }
+            if (in_array($input[$y][$x], ['G', 'E'])) {
+                array_push($units, [$i , $input[$y][$x], 200]); // [point, species, HP]
+                if ($input[$y][$x] === 'E') {
+                    $totalElves++;
+                }
+            }
+        }
+    }
+}
+$initialInput = $input;
+$initialUnits = $units;
+function sortUnits() { global $units; usort($units, function ($a, $b) { return $a[0] - $b[0]; }); }
 function stamp($input) {
     echo trim(array_reduce($input, function ($carry, $row) { return $carry . PHP_EOL . implode('', $row); }, '')) . PHP_EOL;
 }
-function readingOrderSortFn($a, $b) {
-    return $a[0] - $b[0] === 0 ? ($a[1] - $b[1]) : $a[0] - $b[0];
-}
-function dfs($point, $path, $destination, &$paths, &$visited, &$shortestPathLength, &$input) {
-    if (isset($visited[$point[0]][$point[1]]) && $visited[$point[0]][$point[1]] === 1) {
-        return;
-    }
-    if (count($path) > $shortestPathLength) {
-        return;
-    }
-    if ($point[0] === $destination[0] && $point[1] === $destination[1]) {
-        if (count($path) < $shortestPathLength) {
-            $shortestPathLength = count($path);
-            $paths = [$path];
-        } else if (count($path) === $shortestPathLength) {
-            $paths[] = $path;
-        }
-        return;
-    }
-    $visited[$point[0]][$point[1]] = 1;
-    $transitions = [];
-    if ($destination[0] - $point[0] > 0 && $destination[1] - $point[1] > 0) {
-        $transitions = [];
-    }
-    foreach ([[-1, 0], [0, -1], [0, 1], [1, 0]] as $transition) {
-        $y = $point[0] + $transition[0];
-        $x = $point[1] + $transition[1];
-        if ($y >= 0 && $y < count($input) && $x >= 0 && $x < count($input[$y]) && $input[$y][$x] === '.') {
-            dfs([$y, $x], array_merge($path, [[$y, $x]]), $destination, $paths, $visited, $shortestPathLength, $input);
+function bfs($source, $destination) {
+    global $points, $units, $input;
+    $queue = [];
+    $length = count($input) * count($input[0]);
+    $visited = array_fill(0, $length, false);
+    $dist = array_fill(0, $length, PHP_INT_MAX);
+    $pred = array_fill(0, $length, -1);
+    $visited[$source] = true;
+    foreach ($units as $unit) {
+        if ($unit[2] > 0) {
+            $visited[$unit[0]] = true;
         }
     }
-    $visited[$point[0]][$point[1]] = 0;
-}
-function findShortestPath($from, $to, &$input) {
-    $visited = [];
-    $paths = [];
-    $shortestPathLength = PHP_INT_MAX;
-    echo 'dfs start' . PHP_EOL;
-    dfs($from, [], $to, $paths, $visited, $shortestPathLength, $input);
-    echo 'dfs stop' . PHP_EOL;
-    foreach ($paths as $path) {
-        if (count($path) === $shortestPathLength) {
-            return $path;
+    $dist[$source] = 0;
+    array_push($queue, $source);
+    while (count($queue)) {
+        $u = array_shift($queue);
+        foreach ($points[$u][2] as $adj) {
+            if ($visited[$adj] === false) {
+                $visited[$adj] = true;
+                $dist[$adj] = $dist[$u] + 1;
+                $pred[$adj] = $u;
+                array_push($queue, $adj);
+                if ($adj === $destination) {
+                    $curr = $adj;
+                    $path = [];
+                    while ($curr !== $source) {
+                        array_unshift($path, $curr);
+                        $curr = $pred[$curr];
+                    }
+                    return $path;
+                }
+            }
         }
     }
     return null;
 }
+sortUnits();
 
-
-$flags = FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES;
-$input = array_map(function ($line) { return str_split($line); }, file(__DIR__ . '/inputs/inputPuzzle.txt', $flags));
-$units = [];
-for ($y = 0; $y < count($input); ++$y) {
-    for ($x = 0; $x < count($input[$y]); ++$x) {
-        if (in_array($input[$y][$x], ['G', 'E'])) {
-            $units[] = [$y, $x, $input[$y][$x], 3, 200, 1];
-        }
-    }
-}
-
-stamp($input);
-
-$round = 0;
+$attackPower = 200;
+$dir='down';
 while (true) {
-//for ($t = 0; $t < 24; ++$t) {
-    echo 'The round ' . $round . PHP_EOL;
-    for ($i = 0; $i < count($units); ++$i) {
-        if ($units[$i][5] === 0) { // skips if a unit is marked as dead
-            continue;
-        }
-        $unit = $units[$i]; // abbr.
-        //echo 'The unit ' . $unit[0] . ', ' . $unit[1] . ' turn' . PHP_EOL;
-        // finds all targets
-        $targets = [];
-        foreach ([[-1, 0], [0, -1], [0, 1], [1, 0]] as $transition) {
-            $y = $unit[0] + $transition[0];
-            $x = $unit[1] + $transition[1];
-            if (
-                $y >= 0 && $y < count($input)
-                && $x >= 0 && $x < count($input[$y])
-                && $input[$y][$x] === ($unit[2] === 'E' ? 'G' : 'E')
-            ) {
-                $targets[] = [$y, $x];
+    echo 'THE CURRENT ATTACK POWER = ' . $attackPower . PHP_EOL;
+    //sleep(1);
+    $input = $initialInput;
+    $units = $initialUnits;
+    foreach ($units as $unit) {
+        echo '[' . implode(', ', $unit) . ']' . PHP_EOL;
+    }
+    stamp($input);
+    $round = 0;
+    while (true) {
+        echo 'The round ' . $round . PHP_EOL;
+        for ($u = 0; $u < count($units); ++$u) {
+            if ($units[$u][2] <= 0) {
+                continue;
             }
-        }
-        // if no targets then move
-        if (count($targets) === 0) {
-            $destinations = [];
-            foreach ($units as $anotherUnit) {
-                if ($unit[2] !== $anotherUnit[2] && $anotherUnit[5] === 1) { //  checks the species
-                    foreach ([[-1, 0], [0, -1], [0, 1], [1, 0]] as $transition) {
-                        $y = $anotherUnit[0] + $transition[0];
-                        $x = $anotherUnit[1] + $transition[1];
-                        if (
-                            $y >= 0 && $y < count($input)
-                            && $x >= 0 && $x < count($input[$y])
-                            && $input[$y][$x] === '.'
-                        ) {
-                            $destinations[] = [$y, $x];
+            $unit = $units[$u];
+            echo 'current [' . implode(', ', $unit) . ']' . PHP_EOL;
+            $targets = [];
+            foreach ($points[$unit[0]][2] as $adj) {
+                if ($input[$points[$adj][0]][$points[$adj][1]] === ($unit[1] === 'E' ? 'G' : 'E')) {
+                    array_push($targets, $adj);
+                }
+            }
+            if (count($targets) === 0) {
+                $destinations = [];
+                foreach ($units as $anotherUnit) {
+                    if ($unit[0] !== $anotherUnit[0] && $unit[1] !== $anotherUnit[1] && $anotherUnit[2] > 0) { //  checks the species
+                        foreach ($points[$anotherUnit[0]][2] as $adj) {
+                            if ($input[$points[$adj][0]][$points[$adj][1]] === '.') {
+                                array_push($destinations, $adj);
+                            }
+                        }
+                    }
+                }
+                sort($destinations);
+                $nearestDestination = null;
+                $nearestDestinationDistance = null;
+                foreach ($destinations as $destination) {
+                    $path = bfs($unit[0], $destination);
+                    if ($path !== null && (is_null($nearestDestinationDistance) || count($path) < $nearestDestinationDistance)) {
+                        $nearestDestination = $path;
+                        $nearestDestinationDistance = count($path);
+                    }
+                }
+                if ($nearestDestination !== null) {
+                    $input[$points[$unit[0]][0]][$points[$unit[0]][1]] = '.'; // movement
+                    $step = $nearestDestination[0];
+                    $input[$points[$step][0]][$points[$step][1]] = $unit[1];
+                    $units[$u][0] = $step;
+                    $unit[0] = $step;
+                    foreach ($points[$unit[0]][2] as $adj) {
+                        if ($input[$points[$adj][0]][$points[$adj][1]] === ($unit[1] === 'E' ? 'G' : 'E')) {
+                            array_push($targets, $adj);
                         }
                     }
                 }
             }
-            usort($destinations, 'readingOrderSortFn'); // sorts destinations
-            $nearestDestination = null;
-            $nearestPathLength = null;
-            foreach ($destinations as $destination) {
-                $path = findShortestPath([$unit[0], $unit[1]], $destination, $input);
-                // finds the nearest path
-                if ($path !== null && (is_null($nearestPathLength) || count($path) < $nearestPathLength)) {
-                    $nearestDestination = [$destination[0], $destination[1], $path];
-                    $nearestPathLength = count($path);
-                }
-            }
-            // moves if the nearest destination is found
-            if ($nearestDestination !== null) {
-                $input[$unit[0]][$unit[1]] = '.'; // movement
-                $input[$nearestDestination[2][0][0]][$nearestDestination[2][0][1]] = $unit[2]; // movement
-                $units[$i][0] = $nearestDestination[2][0][0];
-                $units[$i][1] = $nearestDestination[2][0][1];
-                foreach ([[-1, 0], [0, -1], [0, 1], [1, 0]] as $transition) {
-                    $y = $units[$i][0] + $transition[0];
-                    $x = $units[$i][1] + $transition[1];
-                    if (
-                        $y >= 0 && $y < count($input)
-                        && $x >= 0 && $x < count($input[$y])
-                        && $input[$y][$x] === ($unit[2] === 'E' ? 'G' : 'E')
-                    ) {
-                        $targets[] = [$y, $x];
+            if (count($targets) > 0) {
+                $bestTarget = null;
+                foreach ($targets as $target) {
+                    for ($j = 0; $j < count($units); ++$j) {
+                        if ($units[$j][0] === $target &&  $units[$j][2] > 0 && (is_null($bestTarget) || $units[$bestTarget][2] > $units[$j][2])) {
+                            $bestTarget = $j;
+                        }
                     }
                 }
-                //var_dump($nearestDestination);
-                //stamp($input);
-            }
-        }
-        // attacks if the unit has targets
-        if (count($targets) > 0) {
-            $bestTarget = null;
-            foreach ($targets as $target) {
-                for ($j = 0; $j < count($units); ++$j) {
-                    if (
-                        $units[$j][0] === $target[0] && $units[$j][1] === $target[1] &&  $units[$j][5] === 1
-                        && (is_null($bestTarget) || $units[$bestTarget][4] > $units[$j][4])
-                    ) {
-                        $bestTarget = $j;
-                    }
+                $units[$bestTarget][2] -= $unit[1] === 'E' ? $attackPower : 3;
+                if ($units[$bestTarget][2] < 1) {
+                    $input[$points[$units[$bestTarget][0]][0]][$points[$units[$bestTarget][0]][1]] = '.';
                 }
             }
-            //echo 'The unit ' . $units[$i][0] . ', ' . $units[$i][1] . ' has found the best target: ' . 
-            //    $units[$bestTarget][0] . ', ' . $units[$bestTarget][1] . PHP_EOL;
-            $units[$bestTarget][4] -= $unit[3];
-            //echo 'The unit ' . $units[$bestTarget][0] . ', ' . $units[$bestTarget][1] . ' has received ' . $unit[3]
-            //    . ' DMG, it has ' . $units[$bestTarget][4] . ' HP now' . PHP_EOL;
-            if ($units[$bestTarget][4] < 1) {
-                $input[$units[$bestTarget][0]][$units[$bestTarget][1]] = '.';
-                $units[$bestTarget][5] = 0; // marks as dead
+        }
+        sortUnits();
+        stamp($input);
+        $remaining = ['E' => 0, 'G' => 0];
+        $survivedElves = 0;
+        for ($i = 0; $i < count($units); ++$i) {
+            if ($units[$i][2] < 1) {
+                continue;
+            }
+            echo '(' . implode(', ', $units[$i]) . ' HP) ';
+            $remaining[$units[$i][1]] += $units[$i][2];
+            if ($units[$i][1] === 'E') {
+                $survivedElves++;
             }
         }
-    }
-    usort($units, 'readingOrderSortFn');
-    stamp($input);
-    $remaining = ['E' => 0, 'G' => 0];
-    for ($i = 0; $i < count($units); ++$i) {
-        if ($units[$i][5] === 0) {
-            continue;
+        echo PHP_EOL;
+        if ($remaining['E'] === 0 || $remaining['G'] === 0) {
+            echo 'The result:' . PHP_EOL;
+            foreach ($remaining as $species => $score) {
+                echo $species . ', points: ' . $score . ', outcome: ' . ($score * $round) . PHP_EOL; 
+            }
+            break;
         }
-        echo '(' . $units[$i][0] . ', ' . $units[$i][1] . ', ' . $units[$i][4] . ' HP) ';
-        $remaining[$units[$i][2]] += $units[$i][4];
+        $round++;
     }
-    echo PHP_EOL;
-    if ($remaining['E'] === 0 || $remaining['G'] === 0) {
-        echo 'The result:' . PHP_EOL;
-        foreach ($remaining as $species => $points) {
-            echo $species . ', points: ' . $points . ', outcome: ' . ($points * $round) . PHP_EOL; 
+    if ($survivedElves === $totalElves) {
+        if ($dir == 'down') {
+            $attackPower = $attackPower - max([floor($attackPower / 2), 1]);
+        } else {
+            echo 'FOUND!' . PHP_EOL;
+            echo 'attack power = ' . $attackPower . PHP_EOL;
+            break;
         }
-        break;
+    } else {
+        $dir = 'up';
+        $attackPower++;
     }
-    $round++;
 }
